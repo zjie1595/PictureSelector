@@ -11,6 +11,7 @@ import com.luck.picture.lib.config.PictureSelectionConfig;
 import com.luck.picture.lib.config.SelectMimeType;
 import com.luck.picture.lib.entity.LocalMedia;
 import com.luck.picture.lib.entity.LocalMediaFolder;
+import com.luck.picture.lib.entity.MediaData;
 import com.luck.picture.lib.interfaces.OnQueryAlbumListener;
 import com.luck.picture.lib.interfaces.OnQueryAllAlbumListener;
 import com.luck.picture.lib.interfaces.OnQueryDataResultListener;
@@ -108,6 +109,11 @@ public abstract class IBridgeMediaLoader {
     public abstract void loadAllAlbum(OnQueryAllAlbumListener<LocalMediaFolder> query);
 
     /**
+     * synchronize query album list
+     */
+    public abstract List<LocalMediaFolder> loadAllAlbum();
+
+    /**
      * page query specified contents
      *
      * @param bucketId
@@ -115,6 +121,15 @@ public abstract class IBridgeMediaLoader {
      * @param pageSize
      */
     public abstract void loadPageMediaData(long bucketId, int page, int pageSize, OnQueryDataResultListener<LocalMedia> query);
+
+    /**
+     * synchronize page query specified contents
+     *
+     * @param bucketId
+     * @param page
+     * @param pageSize
+     */
+    public abstract MediaData loadPageMediaData(long bucketId, int page, int pageSize);
 
 
     /**

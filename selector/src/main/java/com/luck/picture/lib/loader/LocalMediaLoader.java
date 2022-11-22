@@ -12,6 +12,7 @@ import com.luck.picture.lib.config.PictureSelectionConfig;
 import com.luck.picture.lib.config.SelectMimeType;
 import com.luck.picture.lib.entity.LocalMedia;
 import com.luck.picture.lib.entity.LocalMediaFolder;
+import com.luck.picture.lib.entity.MediaData;
 import com.luck.picture.lib.interfaces.OnQueryAlbumListener;
 import com.luck.picture.lib.interfaces.OnQueryAllAlbumListener;
 import com.luck.picture.lib.interfaces.OnQueryDataResultListener;
@@ -84,81 +85,86 @@ public final class LocalMediaLoader extends IBridgeMediaLoader {
 
 
     @Override
+    public List<LocalMediaFolder> loadAllAlbum() {
+        List<LocalMediaFolder> imageFolders = new ArrayList<>();
+        Cursor data = getContext().getContentResolver().query(QUERY_URI, PROJECTION,
+                getSelection(), getSelectionArgs(), getSortOrder());
+        try {
+            if (data != null) {
+                LocalMediaFolder allImageFolder = new LocalMediaFolder();
+                ArrayList<LocalMedia> latelyImages = new ArrayList<>();
+                int count = data.getCount();
+                if (count > 0) {
+                    data.moveToFirst();
+                    do {
+                        LocalMedia media = parseLocalMedia(data, false);
+                        if (media == null) {
+                            continue;
+                        }
+                        LocalMediaFolder folder = getImageFolder(media.getPath(),
+                                media.getMimeType(), media.getParentFolderName(), imageFolders);
+                        folder.setBucketId(media.getBucketId());
+                        folder.getData().add(media);
+                        folder.setFolderTotalNum(folder.getFolderTotalNum() + 1);
+                        folder.setBucketId(media.getBucketId());
+                        latelyImages.add(media);
+                        int imageNum = allImageFolder.getFolderTotalNum();
+                        allImageFolder.setFolderTotalNum(imageNum + 1);
+
+                    } while (data.moveToNext());
+
+                    LocalMediaFolder selfFolder = SandboxFileLoader
+                            .loadInAppSandboxFolderFile(getContext(), getConfig().sandboxDir);
+                    if (selfFolder != null) {
+                        imageFolders.add(selfFolder);
+                        allImageFolder.setFolderTotalNum(allImageFolder.getFolderTotalNum() + selfFolder.getFolderTotalNum());
+                        allImageFolder.setData(selfFolder.getData());
+                        latelyImages.addAll(0, selfFolder.getData());
+                        if (MAX_SORT_SIZE > selfFolder.getFolderTotalNum()) {
+                            if (latelyImages.size() > MAX_SORT_SIZE) {
+                                SortUtils.sortLocalMediaAddedTime(latelyImages.subList(0, MAX_SORT_SIZE));
+                            } else {
+                                SortUtils.sortLocalMediaAddedTime(latelyImages);
+                            }
+                        }
+                    }
+
+                    if (latelyImages.size() > 0) {
+                        SortUtils.sortFolder(imageFolders);
+                        imageFolders.add(0, allImageFolder);
+                        allImageFolder.setFirstImagePath
+                                (latelyImages.get(0).getPath());
+                        allImageFolder.setFirstMimeType(latelyImages.get(0).getMimeType());
+                        String folderName;
+                        if (TextUtils.isEmpty(getConfig().defaultAlbumName)) {
+                            folderName = getConfig().chooseMode == SelectMimeType.ofAudio()
+                                    ? getContext().getString(R.string.ps_all_audio) : getContext().getString(R.string.ps_camera_roll);
+                        } else {
+                            folderName = getConfig().defaultAlbumName;
+                        }
+                        allImageFolder.setFolderName(folderName);
+                        allImageFolder.setBucketId(PictureConfig.ALL);
+                        allImageFolder.setData(latelyImages);
+                    }
+                }
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        } finally {
+            if (data != null && !data.isClosed()) {
+                data.close();
+            }
+        }
+        return imageFolders;
+    }
+
+    @Override
     public void loadAllAlbum(OnQueryAllAlbumListener<LocalMediaFolder> query) {
         PictureThreadUtils.executeByIo(new PictureThreadUtils.SimpleTask<List<LocalMediaFolder>>() {
 
             @Override
             public List<LocalMediaFolder> doInBackground() {
-                List<LocalMediaFolder> imageFolders = new ArrayList<>();
-                Cursor data = getContext().getContentResolver().query(QUERY_URI, PROJECTION,
-                        getSelection(), getSelectionArgs(), getSortOrder());
-                try {
-                    if (data != null) {
-                        LocalMediaFolder allImageFolder = new LocalMediaFolder();
-                        ArrayList<LocalMedia> latelyImages = new ArrayList<>();
-                        int count = data.getCount();
-                        if (count > 0) {
-                            data.moveToFirst();
-                            do {
-                                LocalMedia media = parseLocalMedia(data, false);
-                                if (media == null) {
-                                    continue;
-                                }
-                                LocalMediaFolder folder = getImageFolder(media.getPath(),
-                                        media.getMimeType(), media.getParentFolderName(), imageFolders);
-                                folder.setBucketId(media.getBucketId());
-                                folder.getData().add(media);
-                                folder.setFolderTotalNum(folder.getFolderTotalNum() + 1);
-                                folder.setBucketId(media.getBucketId());
-                                latelyImages.add(media);
-                                int imageNum = allImageFolder.getFolderTotalNum();
-                                allImageFolder.setFolderTotalNum(imageNum + 1);
-
-                            } while (data.moveToNext());
-
-                            LocalMediaFolder selfFolder = SandboxFileLoader
-                                    .loadInAppSandboxFolderFile(getContext(), getConfig().sandboxDir);
-                            if (selfFolder != null) {
-                                imageFolders.add(selfFolder);
-                                allImageFolder.setFolderTotalNum(allImageFolder.getFolderTotalNum() + selfFolder.getFolderTotalNum());
-                                allImageFolder.setData(selfFolder.getData());
-                                latelyImages.addAll(0, selfFolder.getData());
-                                if (MAX_SORT_SIZE > selfFolder.getFolderTotalNum()) {
-                                    if (latelyImages.size() > MAX_SORT_SIZE) {
-                                        SortUtils.sortLocalMediaAddedTime(latelyImages.subList(0, MAX_SORT_SIZE));
-                                    } else {
-                                        SortUtils.sortLocalMediaAddedTime(latelyImages);
-                                    }
-                                }
-                            }
-
-                            if (latelyImages.size() > 0) {
-                                SortUtils.sortFolder(imageFolders);
-                                imageFolders.add(0, allImageFolder);
-                                allImageFolder.setFirstImagePath
-                                        (latelyImages.get(0).getPath());
-                                allImageFolder.setFirstMimeType(latelyImages.get(0).getMimeType());
-                                String folderName;
-                                if (TextUtils.isEmpty(getConfig().defaultAlbumName)) {
-                                    folderName = getConfig().chooseMode == SelectMimeType.ofAudio()
-                                            ? getContext().getString(R.string.ps_all_audio) : getContext().getString(R.string.ps_camera_roll);
-                                } else {
-                                    folderName = getConfig().defaultAlbumName;
-                                }
-                                allImageFolder.setFolderName(folderName);
-                                allImageFolder.setBucketId(PictureConfig.ALL);
-                                allImageFolder.setData(latelyImages);
-                            }
-                        }
-                    }
-                } catch (Exception e) {
-                    e.printStackTrace();
-                } finally {
-                    if (data != null && !data.isClosed()) {
-                        data.close();
-                    }
-                }
-                return imageFolders;
+                return loadAllAlbum();
             }
 
             @Override
@@ -194,6 +200,11 @@ public final class LocalMediaLoader extends IBridgeMediaLoader {
     @Override
     public void loadPageMediaData(long bucketId, int page, int pageSize, OnQueryDataResultListener<LocalMedia> query) {
 
+    }
+
+    @Override
+    public MediaData loadPageMediaData(long bucketId, int page, int pageSize) {
+        return null;
     }
 
     @Override
