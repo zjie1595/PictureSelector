@@ -7,10 +7,11 @@ import android.provider.MediaStore;
 import android.text.TextUtils;
 
 import com.luck.picture.lib.config.PictureMimeType;
-import com.luck.picture.lib.config.SelectorConfig;
 import com.luck.picture.lib.config.SelectMimeType;
+import com.luck.picture.lib.config.SelectorConfig;
 import com.luck.picture.lib.entity.LocalMedia;
 import com.luck.picture.lib.entity.LocalMediaFolder;
+import com.luck.picture.lib.entity.MediaData;
 import com.luck.picture.lib.interfaces.OnQueryAlbumListener;
 import com.luck.picture.lib.interfaces.OnQueryAllAlbumListener;
 import com.luck.picture.lib.interfaces.OnQueryDataResultListener;
@@ -102,6 +103,8 @@ public abstract class IBridgeMediaLoader {
      */
     public abstract void loadAllAlbum(OnQueryAllAlbumListener<LocalMediaFolder> query);
 
+    public abstract List<LocalMediaFolder> loadAllAlbum();
+
     /**
      * page query specified contents
      *
@@ -110,6 +113,8 @@ public abstract class IBridgeMediaLoader {
      * @param pageSize
      */
     public abstract void loadPageMediaData(long bucketId, int page, int pageSize, OnQueryDataResultListener<LocalMedia> query);
+
+    public abstract MediaData loadPageMediaData(long bucketId, int page, int pageSize);
 
 
     /**

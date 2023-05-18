@@ -173,47 +173,7 @@ public final class LocalMediaPageLoader extends IBridgeMediaLoader {
 
             @Override
             public MediaData doInBackground() {
-                Cursor data = null;
-                try {
-                    if (SdkVersionUtils.isR()) {
-                        Bundle queryArgs = MediaUtils.createQueryArgsBundle(getPageSelection(bucketId), getPageSelectionArgs(bucketId), pageSize, (page - 1) * pageSize, getSortOrder());
-                        data = getContext().getContentResolver().query(QUERY_URI, PROJECTION, queryArgs, null);
-                    } else {
-                        String orderBy = page == PictureConfig.ALL ? getSortOrder() : getSortOrder() + " limit " + pageSize + " offset " + (page - 1) * pageSize;
-                        data = getContext().getContentResolver().query(QUERY_URI, PROJECTION, getPageSelection(bucketId), getPageSelectionArgs(bucketId), orderBy);
-                    }
-                    if (data != null) {
-                        ArrayList<LocalMedia> result = new ArrayList<>();
-                        if (data.getCount() > 0) {
-                            data.moveToFirst();
-                            do {
-                                LocalMedia media = parseLocalMedia(data, false);
-                                if (media == null) {
-                                    continue;
-                                }
-                                result.add(media);
-
-                            } while (data.moveToNext());
-                        }
-                        if (bucketId == PictureConfig.ALL && page == 1) {
-                            List<LocalMedia> list = SandboxFileLoader.loadInAppSandboxFile(getContext(), getConfig().sandboxDir);
-                            if (list != null) {
-                                result.addAll(list);
-                                SortUtils.sortLocalMediaAddedTime(result);
-                            }
-                        }
-                        return new MediaData(data.getCount() > 0, result);
-                    }
-                } catch (Exception e) {
-                    e.printStackTrace();
-                    Log.i(TAG, "loadMedia Page Data Error: " + e.getMessage());
-                    return new MediaData();
-                } finally {
-                    if (data != null && !data.isClosed()) {
-                        data.close();
-                    }
-                }
-                return new MediaData();
+                return loadPageMediaData(bucketId, page, pageSize);
             }
 
             @Override
@@ -224,6 +184,51 @@ public final class LocalMediaPageLoader extends IBridgeMediaLoader {
                 }
             }
         });
+    }
+
+    @Override
+    public MediaData loadPageMediaData(long bucketId, int page, int pageSize) {
+        Cursor data = null;
+        try {
+            if (SdkVersionUtils.isR()) {
+                Bundle queryArgs = MediaUtils.createQueryArgsBundle(getPageSelection(bucketId), getPageSelectionArgs(bucketId), pageSize, (page - 1) * pageSize, getSortOrder());
+                data = getContext().getContentResolver().query(QUERY_URI, PROJECTION, queryArgs, null);
+            } else {
+                String orderBy = page == PictureConfig.ALL ? getSortOrder() : getSortOrder() + " limit " + pageSize + " offset " + (page - 1) * pageSize;
+                data = getContext().getContentResolver().query(QUERY_URI, PROJECTION, getPageSelection(bucketId), getPageSelectionArgs(bucketId), orderBy);
+            }
+            if (data != null) {
+                ArrayList<LocalMedia> result = new ArrayList<>();
+                if (data.getCount() > 0) {
+                    data.moveToFirst();
+                    do {
+                        LocalMedia media = parseLocalMedia(data, false);
+                        if (media == null) {
+                            continue;
+                        }
+                        result.add(media);
+
+                    } while (data.moveToNext());
+                }
+                if (bucketId == PictureConfig.ALL && page == 1) {
+                    List<LocalMedia> list = SandboxFileLoader.loadInAppSandboxFile(getContext(), getConfig().sandboxDir);
+                    if (list != null) {
+                        result.addAll(list);
+                        SortUtils.sortLocalMediaAddedTime(result);
+                    }
+                }
+                return new MediaData(data.getCount() > 0, result);
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+            Log.i(TAG, "loadMedia Page Data Error: " + e.getMessage());
+            return new MediaData();
+        } finally {
+            if (data != null && !data.isClosed()) {
+                data.close();
+            }
+        }
+        return new MediaData();
     }
 
     @Override
@@ -255,141 +260,7 @@ public final class LocalMediaPageLoader extends IBridgeMediaLoader {
         PictureThreadUtils.executeByIo(new PictureThreadUtils.SimpleTask<List<LocalMediaFolder>>() {
             @Override
             public List<LocalMediaFolder> doInBackground() {
-                Cursor data = getContext().getContentResolver().query(QUERY_URI, isWithAllQuery() ? PROJECTION : ALL_PROJECTION,
-                        getSelection(), getSelectionArgs(), getSortOrder());
-                try {
-                    if (data != null) {
-                        int count = data.getCount();
-                        int totalCount = 0;
-                        List<LocalMediaFolder> mediaFolders = new ArrayList<>();
-                        if (count > 0) {
-                            if (isWithAllQuery()) {
-                                Map<Long, Long> countMap = new HashMap<>();
-                                Set<Long> hashSet = new HashSet<>();
-                                while (data.moveToNext()) {
-                                    if (getConfig().isPageSyncAsCount) {
-                                        LocalMedia media = parseLocalMedia(data, true);
-                                        if (media == null) {
-                                            continue;
-                                        }
-                                        media.recycle();
-                                    }
-                                    long bucketId = data.getLong(data.getColumnIndexOrThrow(COLUMN_BUCKET_ID));
-                                    Long newCount = countMap.get(bucketId);
-                                    if (newCount == null) {
-                                        newCount = 1L;
-                                    } else {
-                                        newCount++;
-                                    }
-                                    countMap.put(bucketId, newCount);
-
-                                    if (hashSet.contains(bucketId)) {
-                                        continue;
-                                    }
-                                    LocalMediaFolder mediaFolder = new LocalMediaFolder();
-                                    mediaFolder.setBucketId(bucketId);
-                                    String bucketDisplayName = data.getString(
-                                            data.getColumnIndexOrThrow(COLUMN_BUCKET_DISPLAY_NAME));
-                                    String mimeType = data.getString(data.getColumnIndexOrThrow(MediaStore.MediaColumns.MIME_TYPE));
-                                    if (!countMap.containsKey(bucketId)) {
-                                        continue;
-                                    }
-                                    long size = countMap.get(bucketId);
-                                    long id = data.getLong(data.getColumnIndexOrThrow(MediaStore.Files.FileColumns._ID));
-                                    mediaFolder.setFolderName(bucketDisplayName);
-                                    mediaFolder.setFolderTotalNum(ValueOf.toInt(size));
-                                    mediaFolder.setFirstImagePath(MediaUtils.getRealPathUri(id, mimeType));
-                                    mediaFolder.setFirstMimeType(mimeType);
-                                    mediaFolders.add(mediaFolder);
-                                    hashSet.add(bucketId);
-                                }
-                                for (LocalMediaFolder mediaFolder : mediaFolders) {
-                                    int size = ValueOf.toInt(countMap.get(mediaFolder.getBucketId()));
-                                    mediaFolder.setFolderTotalNum(size);
-                                    totalCount += size;
-                                }
-                            } else {
-                                data.moveToFirst();
-                                do {
-                                    String url = data.getString(data.getColumnIndexOrThrow(MediaStore.MediaColumns.DATA));
-                                    String bucketDisplayName = data.getString(data.getColumnIndexOrThrow(COLUMN_BUCKET_DISPLAY_NAME));
-                                    String mimeType = data.getString(data.getColumnIndexOrThrow(MediaStore.MediaColumns.MIME_TYPE));
-                                    long bucketId = data.getLong(data.getColumnIndexOrThrow(COLUMN_BUCKET_ID));
-                                    int size = data.getInt(data.getColumnIndexOrThrow(COLUMN_COUNT));
-                                    LocalMediaFolder mediaFolder = new LocalMediaFolder();
-                                    mediaFolder.setBucketId(bucketId);
-                                    mediaFolder.setFirstImagePath(url);
-                                    mediaFolder.setFolderName(bucketDisplayName);
-                                    mediaFolder.setFirstMimeType(mimeType);
-                                    mediaFolder.setFolderTotalNum(size);
-                                    mediaFolders.add(mediaFolder);
-                                    totalCount += size;
-                                } while (data.moveToNext());
-                            }
-                            // 相机胶卷
-                            LocalMediaFolder allMediaFolder = new LocalMediaFolder();
-                            LocalMediaFolder selfFolder = SandboxFileLoader
-                                    .loadInAppSandboxFolderFile(getContext(), getConfig().sandboxDir);
-                            if (selfFolder != null) {
-                                mediaFolders.add(selfFolder);
-                                String firstImagePath = selfFolder.getFirstImagePath();
-                                File file = new File(firstImagePath);
-                                long lastModified = file.lastModified();
-                                totalCount += selfFolder.getFolderTotalNum();
-                                allMediaFolder.setData(new ArrayList<>());
-                                if (data.moveToFirst()) {
-                                    allMediaFolder.setFirstImagePath(SdkVersionUtils.isQ() ? getFirstUri(data) : getFirstUrl(data));
-                                    allMediaFolder.setFirstMimeType(getFirstCoverMimeType(data));
-                                    long lastModified2;
-                                    if (PictureMimeType.isContent(allMediaFolder.getFirstImagePath())) {
-                                        String path = PictureFileUtils.getPath(getContext(), Uri.parse(allMediaFolder.getFirstImagePath()));
-                                        lastModified2 = new File(path).lastModified();
-                                    } else {
-                                        lastModified2 = new File(allMediaFolder.getFirstImagePath()).lastModified();
-                                    }
-                                    if (lastModified > lastModified2) {
-                                        allMediaFolder.setFirstImagePath(selfFolder.getFirstImagePath());
-                                        allMediaFolder.setFirstMimeType(selfFolder.getFirstMimeType());
-                                    }
-                                }
-                            } else {
-                                if (data.moveToFirst()) {
-                                    allMediaFolder.setFirstImagePath(SdkVersionUtils.isQ() ? getFirstUri(data) : getFirstUrl(data));
-                                    allMediaFolder.setFirstMimeType(getFirstCoverMimeType(data));
-                                }
-                            }
-                            if (totalCount == 0) {
-                                return mediaFolders;
-                            }
-                            SortUtils.sortFolder(mediaFolders);
-                            allMediaFolder.setFolderTotalNum(totalCount);
-                            allMediaFolder.setBucketId(PictureConfig.ALL);
-                            String folderName;
-                            if (TextUtils.isEmpty(getConfig().defaultAlbumName)) {
-                                folderName = getConfig().chooseMode == SelectMimeType.ofAudio()
-                                        ? getContext().getString(R.string.ps_all_audio) : getContext().getString(R.string.ps_camera_roll);
-                            } else {
-                                folderName = getConfig().defaultAlbumName;
-                            }
-                            allMediaFolder.setFolderName(folderName);
-                            mediaFolders.add(0, allMediaFolder);
-                            if (getConfig().isSyncCover) {
-                                if (getConfig().chooseMode == SelectMimeType.ofAll()) {
-                                    synchronousFirstCover(mediaFolders);
-                                }
-                            }
-                            return mediaFolders;
-                        }
-                    }
-                } catch (Exception e) {
-                    e.printStackTrace();
-                    Log.i(TAG, "loadAllMedia Data Error: " + e.getMessage());
-                } finally {
-                    if (data != null && !data.isClosed()) {
-                        data.close();
-                    }
-                }
-                return new ArrayList<>();
+                return loadAllAlbum();
             }
 
             @Override
@@ -401,6 +272,145 @@ public final class LocalMediaPageLoader extends IBridgeMediaLoader {
                 }
             }
         });
+    }
+
+    @Override
+    public List<LocalMediaFolder> loadAllAlbum() {
+        Cursor data = getContext().getContentResolver().query(QUERY_URI, isWithAllQuery() ? PROJECTION : ALL_PROJECTION,
+                getSelection(), getSelectionArgs(), getSortOrder());
+        try {
+            if (data != null) {
+                int count = data.getCount();
+                int totalCount = 0;
+                List<LocalMediaFolder> mediaFolders = new ArrayList<>();
+                if (count > 0) {
+                    if (isWithAllQuery()) {
+                        Map<Long, Long> countMap = new HashMap<>();
+                        Set<Long> hashSet = new HashSet<>();
+                        while (data.moveToNext()) {
+                            if (getConfig().isPageSyncAsCount) {
+                                LocalMedia media = parseLocalMedia(data, true);
+                                if (media == null) {
+                                    continue;
+                                }
+                                media.recycle();
+                            }
+                            long bucketId = data.getLong(data.getColumnIndexOrThrow(COLUMN_BUCKET_ID));
+                            Long newCount = countMap.get(bucketId);
+                            if (newCount == null) {
+                                newCount = 1L;
+                            } else {
+                                newCount++;
+                            }
+                            countMap.put(bucketId, newCount);
+
+                            if (hashSet.contains(bucketId)) {
+                                continue;
+                            }
+                            LocalMediaFolder mediaFolder = new LocalMediaFolder();
+                            mediaFolder.setBucketId(bucketId);
+                            String bucketDisplayName = data.getString(
+                                    data.getColumnIndexOrThrow(COLUMN_BUCKET_DISPLAY_NAME));
+                            String mimeType = data.getString(data.getColumnIndexOrThrow(MediaStore.MediaColumns.MIME_TYPE));
+                            if (!countMap.containsKey(bucketId)) {
+                                continue;
+                            }
+                            long size = countMap.get(bucketId);
+                            long id = data.getLong(data.getColumnIndexOrThrow(MediaStore.Files.FileColumns._ID));
+                            mediaFolder.setFolderName(bucketDisplayName);
+                            mediaFolder.setFolderTotalNum(ValueOf.toInt(size));
+                            mediaFolder.setFirstImagePath(MediaUtils.getRealPathUri(id, mimeType));
+                            mediaFolder.setFirstMimeType(mimeType);
+                            mediaFolders.add(mediaFolder);
+                            hashSet.add(bucketId);
+                        }
+                        for (LocalMediaFolder mediaFolder : mediaFolders) {
+                            int size = ValueOf.toInt(countMap.get(mediaFolder.getBucketId()));
+                            mediaFolder.setFolderTotalNum(size);
+                            totalCount += size;
+                        }
+                    } else {
+                        data.moveToFirst();
+                        do {
+                            String url = data.getString(data.getColumnIndexOrThrow(MediaStore.MediaColumns.DATA));
+                            String bucketDisplayName = data.getString(data.getColumnIndexOrThrow(COLUMN_BUCKET_DISPLAY_NAME));
+                            String mimeType = data.getString(data.getColumnIndexOrThrow(MediaStore.MediaColumns.MIME_TYPE));
+                            long bucketId = data.getLong(data.getColumnIndexOrThrow(COLUMN_BUCKET_ID));
+                            int size = data.getInt(data.getColumnIndexOrThrow(COLUMN_COUNT));
+                            LocalMediaFolder mediaFolder = new LocalMediaFolder();
+                            mediaFolder.setBucketId(bucketId);
+                            mediaFolder.setFirstImagePath(url);
+                            mediaFolder.setFolderName(bucketDisplayName);
+                            mediaFolder.setFirstMimeType(mimeType);
+                            mediaFolder.setFolderTotalNum(size);
+                            mediaFolders.add(mediaFolder);
+                            totalCount += size;
+                        } while (data.moveToNext());
+                    }
+                    // 相机胶卷
+                    LocalMediaFolder allMediaFolder = new LocalMediaFolder();
+                    LocalMediaFolder selfFolder = SandboxFileLoader
+                            .loadInAppSandboxFolderFile(getContext(), getConfig().sandboxDir);
+                    if (selfFolder != null) {
+                        mediaFolders.add(selfFolder);
+                        String firstImagePath = selfFolder.getFirstImagePath();
+                        File file = new File(firstImagePath);
+                        long lastModified = file.lastModified();
+                        totalCount += selfFolder.getFolderTotalNum();
+                        allMediaFolder.setData(new ArrayList<>());
+                        if (data.moveToFirst()) {
+                            allMediaFolder.setFirstImagePath(SdkVersionUtils.isQ() ? getFirstUri(data) : getFirstUrl(data));
+                            allMediaFolder.setFirstMimeType(getFirstCoverMimeType(data));
+                            long lastModified2;
+                            if (PictureMimeType.isContent(allMediaFolder.getFirstImagePath())) {
+                                String path = PictureFileUtils.getPath(getContext(), Uri.parse(allMediaFolder.getFirstImagePath()));
+                                lastModified2 = new File(path).lastModified();
+                            } else {
+                                lastModified2 = new File(allMediaFolder.getFirstImagePath()).lastModified();
+                            }
+                            if (lastModified > lastModified2) {
+                                allMediaFolder.setFirstImagePath(selfFolder.getFirstImagePath());
+                                allMediaFolder.setFirstMimeType(selfFolder.getFirstMimeType());
+                            }
+                        }
+                    } else {
+                        if (data.moveToFirst()) {
+                            allMediaFolder.setFirstImagePath(SdkVersionUtils.isQ() ? getFirstUri(data) : getFirstUrl(data));
+                            allMediaFolder.setFirstMimeType(getFirstCoverMimeType(data));
+                        }
+                    }
+                    if (totalCount == 0) {
+                        return mediaFolders;
+                    }
+                    SortUtils.sortFolder(mediaFolders);
+                    allMediaFolder.setFolderTotalNum(totalCount);
+                    allMediaFolder.setBucketId(PictureConfig.ALL);
+                    String folderName;
+                    if (TextUtils.isEmpty(getConfig().defaultAlbumName)) {
+                        folderName = getConfig().chooseMode == SelectMimeType.ofAudio()
+                                ? getContext().getString(R.string.ps_all_audio) : getContext().getString(R.string.ps_camera_roll);
+                    } else {
+                        folderName = getConfig().defaultAlbumName;
+                    }
+                    allMediaFolder.setFolderName(folderName);
+                    mediaFolders.add(0, allMediaFolder);
+                    if (getConfig().isSyncCover) {
+                        if (getConfig().chooseMode == SelectMimeType.ofAll()) {
+                            synchronousFirstCover(mediaFolders);
+                        }
+                    }
+                    return mediaFolders;
+                }
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+            Log.i(TAG, "loadAllMedia Data Error: " + e.getMessage());
+        } finally {
+            if (data != null && !data.isClosed()) {
+                data.close();
+            }
+        }
+        return new ArrayList<>();
     }
 
     /**
